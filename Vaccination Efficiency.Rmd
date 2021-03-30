@@ -1,0 +1,73 @@
+---
+title: "Vaccination Efficiency"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(XLConnect)
+library(tidyverse)
+```
+
+```{r}
+covid <- read_excel("owid-covid-data.xlsx")
+
+#cannot group_by unless location is turned into factor
+covid$location <- as_factor(covid$location)
+covid$date <- lubridate::as_date(covid$date)
+
+glimpse(covid)
+
+#find the correlation between beds and wealth
+covid %>% 
+  select(location, 
+         gdp_per_capita, 
+         hospital_beds_per_thousand, 
+         ) %>% 
+  mutate(wealth = log(gdp_per_capita), #log gives higher correlation than non-log
+         beds = log(hospital_beds_per_thousand)) %>%
+  select(-c(1:3)) %>%
+  distinct() %>% 
+  drop_na() %>% 
+  cor()
+
+#find the max(people_vaccinated) for each row of the list colum `data`
+covid %>% 
+  nest_by(location) 
+
+```
+
+If vaccinations slow down as a greater and greater proportion of people in a country are vaccinated then they can be assumed to follow steady-state enzyme kinetics.
+This assumption can be seen to hold partially true if the proportion vaccinated people in a country is plotted on the log scale.
+Further, borrowing the terminology from enzyme kinetics, in such a case $V_{max}$ would represent the maximum number of people that can be vaccinated (which will be 1) and $K_m$ would represent the catalytic efficiency, i.e. the efficiency of converting unvaccinated into vaccinated people.
+The reason that it was said earlier the assumption holds partially and not fully true is because most countries are far away from reaching the saturation state (the stead state) as apparent from the upward rising slope, rather than a flat slope on the right end of the curve.
+A plot of national $K_m$'s against national per capita GDPs should tell us which countries are punching above their weight.
+
+[**Test if the** $K_m$ **for countries changes when calculated for a country at 30% vaccination versus when calculated for the same country at 60% vaccination. In both cases assume that the vaccination proportion at that stage represents the** $V_{max}$**.**]{.ul}
+
+```{r}
+us <- covid %>% 
+  filter(location == 'United States') %>%
+  mutate(pct = log(people_vaccinated/population)) %>% 
+  select(date, pct) %>% 
+  drop_na()
+
+plot(us$date, us$pct)
+lm(pct ~ date, data = us) %>% abline()
+
+syc <- covid %>% 
+  filter(location == 'Seychelles') %>%
+  mutate(pct = log(people_vaccinated/population)) %>% 
+  # filter(pct <= 0.30) %>% 
+  select(date, pct) %>% 
+  filter(is.finite(pct)) #remove NA's as well as infinities
+
+plot(syc$date, syc$pct)
+lm(pct ~ date, data = syc) %>% abline()
+
+```
