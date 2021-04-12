@@ -10,64 +10,158 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-library(XLConnect)
+library(readxl)
 library(tidyverse)
+library(lubridate)
+library(broom)
+library(ggthemes)
+library(ggrepel)
+library(forcats)
 ```
+
+# Model 1: enzyme kinetics model
+
+# Background
+
+If the rate of new vaccinations per day slows down as more and more people in a country are vaccinated then we can compare the "vaccination efficiency" for each country with analogy to steady-state enzyme kinetics.
+The analogy is justifiable since the vaccine infrastructure of a county does not get consumed in converting people from their unvaccinated to their vaccinated state, and each new vaccination is independent of the last vaccination.
+If the number of new people vaccinated in a country each day is plotted against the number of unvaccinated people each day, then the curves should look like rectangular parabolas.
+Extending the analogy to enzyme kinetics further, the $V_{max}$ would represent the maximum number of people that can be vaccinated (which will be 1) and $K_m$ would represent the catalytic efficiency, i.e. the efficiency of converting unvaccinated people into vaccinated people.
+
+## Unknown
+
+The analogy with enzymes might not work because most countries are far away from reaching the asymptote, i.e. $V_{max}$.
 
 ```{r}
 covid <- read_excel("owid-covid-data.xlsx")
 
-#cannot group_by unless location is turned into factor
-covid$location <- as_factor(covid$location)
-covid$date <- lubridate::as_date(covid$date)
+#just a preliminary plot for each country to check if there are missing values
+covid %>% filter(date >= '2020-12-13') %>% 
+  ggplot(aes(x = date, y = people_vaccinated_per_hundred, col = location, group = location)) +
+  geom_line() +
+  theme_classic() +
+  theme(legend.position = "none") # legend occupies whole plot so removing it
+# instead of above use on the plot labels 
 
-glimpse(covid)
+#the above plot revealed that there are missing values, hence the data was cleaned
+covid <- covid %>% 
+  filter(is.finite(people_vaccinated),
+         !is.na(continent)) %>% 
+  mutate(date = as_date(date)) %>% 
+  mutate(location = as_factor(location))
 
-#find the correlation between beds and wealth
-covid %>% 
-  select(location, 
-         gdp_per_capita, 
-         hospital_beds_per_thousand, 
-         ) %>% 
-  mutate(wealth = log(gdp_per_capita), #log gives higher correlation than non-log
-         beds = log(hospital_beds_per_thousand)) %>%
-  select(-c(1:3)) %>%
-  distinct() %>% 
-  drop_na() %>% 
-  cor()
+covid %>% glimpse()
+```
 
-#find the max(people_vaccinated) for each row of the list colum `data`
-covid %>% 
-  nest_by(location) 
+```{r}
+#checking if the rectangular parabola assumption for applyng MM kinetics is met
+MM_check <- covid %>% 
+  group_by(location) %>% 
+  mutate(unvaccinated_people = population - people_fully_vaccinated, 
+         new_people_vaccinated_per_day = people_fully_vaccinated - lag(people_vaccinated)
+         )
+
+ggplot(data = MM_check, 
+       aes(x = unvaccinated_people, 
+           y = new_people_vaccinated_per_day,
+           col = location, 
+           group = location)) +
+  geom_line() +
+  facet_wrap(~ location, scales = "free") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        axis.line = element_blank()) +
+   xlab("Unvaccinated People --->") + 
+  ylab("New people vaccinated per day --->")
+```
+
+## Conclusion
+
+For countries where a sufficient number of data points are available, the curves fluctuate randomly.
+
+# Model 2: total vaccinations adjusted by population
+
+```{r}
+clean_data_1 <- covid %>% 
+  group_by(location) %>%
+  slice_max(date) #  remove all but one row from each group of rows with 
+                  # identical values in a particular column
+
+ranked_1 <- clean_data_1 %>% 
+  lm(log(total_vaccinations) ~ log(population), data = .) %>% 
+  # glance()
+  augment_columns(clean_data_1) %>% 
+  arrange(desc(.resid)) %>% 
+  head(10)
+  
+ranked_1 %>% 
+  ggplot(aes(x = fct_reorder(location, .std.resid), #reordered location by .std.resid
+             y = .std.resid)) +
+  geom_point() +
+  ylim(0,NA) +
+  coord_flip() +
+  theme_classic()
+
+clean_data_1 %>% 
+  ggplot(aes(y = total_vaccinations, x = population, label = location)) + 
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_smooth(method = 'lm') +
+  geom_label_repel(data = ranked_1, #for repelling overlapping text labels away from each other
+                 force         = 1,
+                 box.padding   = 0.5,
+                 point.padding = 0.5,
+                 direction     = "x",
+                 # nudge_y       = 1e8,
+                 alpha = 0.5) +
+  theme_classic()
 
 ```
 
-If vaccinations slow down as a greater and greater proportion of people in a country are vaccinated then they can be assumed to follow steady-state enzyme kinetics.
-This assumption can be seen to hold partially true if the proportion vaccinated people in a country is plotted on the log scale.
-Further, borrowing the terminology from enzyme kinetics, in such a case $V_{max}$ would represent the maximum number of people that can be vaccinated (which will be 1) and $K_m$ would represent the catalytic efficiency, i.e. the efficiency of converting unvaccinated into vaccinated people.
-The reason that it was said earlier the assumption holds partially and not fully true is because most countries are far away from reaching the saturation state (the stead state) as apparent from the upward rising slope, rather than a flat slope on the right end of the curve.
-A plot of national $K_m$'s against national per capita GDPs should tell us which countries are punching above their weight.
-
-[**Test if the** $K_m$ **for countries changes when calculated for a country at 30% vaccination versus when calculated for the same country at 60% vaccination. In both cases assume that the vaccination proportion at that stage represents the** $V_{max}$**.**]{.ul}
+# Model 3: people vaccinated per hundred  adjusted by population
 
 ```{r}
-us <- covid %>% 
-  filter(location == 'United States') %>%
-  mutate(pct = log(people_vaccinated/population)) %>% 
-  select(date, pct) %>% 
-  drop_na()
+clean_data_2 <- covid %>% 
+  group_by(location) %>%
+  add_count(location) %>% 
+  # arrange(n) %>% 
+  filter(n >= 2) %>% 
+  nest() %>% 
+  mutate(model = map(data, 
+                     ~lm(people_vaccinated_per_hundred ~ date, data = .) %>% tidy)
+         ) %>% 
+  unnest(data) %>% slice_max(date) %>% 
+  unnest(model) %>% filter(term == 'date')
 
-plot(us$date, us$pct)
-lm(pct ~ date, data = us) %>% abline()
+ranked_2 <- clean_data_2 %>%
+  lm(log(estimate) ~ log(population), data = .) %>% 
+  augment_columns(clean_data_2) %>% 
+  arrange(desc(.resid)) %>% 
+  head(10) 
 
-syc <- covid %>% 
-  filter(location == 'Seychelles') %>%
-  mutate(pct = log(people_vaccinated/population)) %>% 
-  # filter(pct <= 0.30) %>% 
-  select(date, pct) %>% 
-  filter(is.finite(pct)) #remove NA's as well as infinities
+ranked_2 %>% 
+  ggplot(aes(x = fct_reorder(location, .std.resid), #reordered location by .std.resid
+             y = .std.resid)) +
+  geom_point() +
+  ylim(0,NA) +
+  coord_flip() +
+  theme_classic()
 
-plot(syc$date, syc$pct)
-lm(pct ~ date, data = syc) %>% abline()
-
+clean_data_2 %>% 
+  ggplot(aes(x = population, y = estimate, label = location)) +
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_smooth(method = 'lm') + 
+  geom_label_repel(data = ranked_2, #for repelling overlapping text labels away from each other
+                 # nudge_y       = 1e8,
+                 force         = 1,
+                 box.padding   = 0.5,
+                 point.padding = 0.5,
+                 direction     = "x",
+                 alpha = 0.5) + 
+  theme_classic()
 ```
