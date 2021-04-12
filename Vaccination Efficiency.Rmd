@@ -64,15 +64,20 @@ MM_check <- covid %>%
 ggplot(data = MM_check, 
        aes(x = unvaccinated_people, 
            y = new_people_vaccinated_per_day,
-           col = location, 
-           group = location)) +
+           # col = location, 
+           group = location,)
+       ) +
   geom_line() +
   facet_wrap(~ location, scales = "free") +
   theme_classic() +
   theme(legend.position = "none",
         axis.ticks = element_blank(),
         axis.text = element_blank(),
-        axis.line = element_blank()) +
+        axis.line = element_blank(),
+        # axis.title = element_blank()
+        strip.background = element_blank(), 
+        strip.text = element_blank()
+        ) +
    xlab("Unvaccinated People --->") + 
   ylab("New people vaccinated per day --->")
 ```
@@ -121,7 +126,7 @@ clean_data_1 %>%
 
 ```
 
-# Model 3: people vaccinated per hundred  adjusted by population
+# Model 3: people vaccinated per hundred adjusted by population
 
 ```{r}
 clean_data_2 <- covid %>% 
