@@ -54,14 +54,14 @@ covid %>% glimpse()
 ```
 
 ```{r}
-#checking if the rectangular parabola assumption for applyng MM kinetics is met
+#checking if the rectangular parabola assumption for applying MM kinetics is met
 MM_check <- covid %>% 
   group_by(location) %>% 
   mutate(unvaccinated_people = population - people_fully_vaccinated, 
          new_people_vaccinated_per_day = people_fully_vaccinated - lag(people_vaccinated)
          )
 
-ggplot(data = MM_check, 
+ggplot(data = MM_check %>% drop_na(), 
        aes(x = unvaccinated_people, 
            y = new_people_vaccinated_per_day,
            # col = location, 
@@ -69,17 +69,22 @@ ggplot(data = MM_check,
        ) +
   geom_line() +
   facet_wrap(~ location, scales = "free") +
+  coord_fixed() + # maintains shape of plots regardless of shape of output device
   theme_classic() +
   theme(legend.position = "none",
         axis.ticks = element_blank(),
         axis.text = element_blank(),
         axis.line = element_blank(),
         # axis.title = element_blank()
-        strip.background = element_blank(), 
-        strip.text = element_blank()
+        strip.background = element_blank(),
+        # strip.text = element_blank()
         ) +
+  # theme_void() + # a completely empty themes that only plots data points
    xlab("Unvaccinated People --->") + 
   ylab("New people vaccinated per day --->")
+
+
+# fit rectangular parabolas to data and arrange by fit
 ```
 
 ## Conclusion
