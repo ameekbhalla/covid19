@@ -61,28 +61,25 @@ MM_check <- covid %>%
          new_people_vaccinated_per_day = people_fully_vaccinated - lag(people_vaccinated)
          )
 
-ggplot(data = MM_check %>% drop_na(), 
+ggplot(data = MM_check, 
        aes(x = unvaccinated_people, 
            y = new_people_vaccinated_per_day,
            # col = location, 
            group = location,)
        ) +
   geom_line() +
-  facet_wrap(~ location, scales = "free") +
+  facet_wrap(~ location, 
+             scales = "free") + # automatically applies the correct scale to each facet
   coord_fixed() + # maintains shape of plots regardless of shape of output device
-  theme_classic() +
-  theme(legend.position = "none",
-        axis.ticks = element_blank(),
-        axis.text = element_blank(),
-        axis.line = element_blank(),
-        # axis.title = element_blank()
-        strip.background = element_blank(),
-        # strip.text = element_blank()
-        ) +
-  # theme_void() + # a completely empty themes that only plots data points
-   xlab("Unvaccinated People --->") + 
-  ylab("New people vaccinated per day --->")
-
+  theme_void() + # a completely empty themes that only plots data points
+  theme(
+    axis.title = element_text(), # adds back the text element removed by theme_void()
+    axis.title.y = element_text(angle = 90),
+    # aspect.ratio = 1 # fixes the aspect ratio of the whole plot, not just facets
+    ) +
+  labs(
+    x = "Unvaccinated People --->",
+    y = "New people vaccinated per day --->")
 
 # fit rectangular parabolas to data and arrange by fit
 ```
